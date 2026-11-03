@@ -1,0 +1,5 @@
+These fonts are from Google Fonts and are licensed under the SIL Open Font License 1.1.
+Inter Tight: https://github.com/googlefonts/inter-tight
+Instrument Serif: https://github.com/Instrument/instrument-serif
+JetBrains Mono: https://github.com/JetBrains/JetBrainsMono
+License text: https://openfontlicense.org
