@@ -1,0 +1,11 @@
+{
+  "name": "little-language-model",
+  "private": true,
+  "type": "module",
+  "description": "A GPT-style language model written from scratch in plain JavaScript, trained live in the browser.",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test/llm.test.mjs",
+    "serve": "node build.mjs && python3 -m http.server 8000 -d dist"
+  }
+}

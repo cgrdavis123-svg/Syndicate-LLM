@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Little Language Model — a GPT, from scratch, learning in your browser</title>
+<meta name="description" content="A GPT-style language model written from scratch in plain JavaScript, with hand-derived backpropagation, training live across your CPU cores. Watch it go from gibberish to Shakespeare. By Grady Davis.">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#07080a">
+<meta property="og:title" content="Little Language Model — a GPT learning to write, live, in your browser">
+<meta property="og:description" content="Hand-written transformer, hand-derived backprop, trained across your CPU cores. No libraries, no server. Watch it learn.">
+<meta property="og:url" content="https://code-demo.grady.stusyn.com/llm/">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preload" href="fonts/inter-tight-normal-latin-1bf6b3.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="llm.css?v=__V__">
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+
+<header class="top">
+  <a class="brand" href="./"><span class="mark" aria-hidden="true">llm</span>Little Language Model</a>
+  <nav class="topnav" aria-label="Site">
+    <a href="#how">How it works</a>
+    <a href="https://code-demo.grady.stusyn.com/project/">Sift</a>
+    <a href="https://github.com/cgrdavis123-svg/Syndicate-LLM">Source ↗</a>
+  </nav>
+</header>
+
+<main id="main">
+
+<section class="hero" aria-labelledby="hero-h">
+  <div class="hero-copy">
+    <p class="eyebrow">Live experiment · by Grady Davis</p>
+    <h1 id="hero-h">A language model, built from scratch, <em>learning to write in your browser.</em></h1>
+    <p class="lede">The same kind of network behind modern AI assistants, just tiny: <b id="pcount">62,000</b> parameters instead of billions. Every layer and every derivative is written by hand in plain JavaScript, and it’s training right now on your CPU cores. It starts out knowing nothing. Watch the text.</p>
+    <div class="controls">
+      <button class="btn" type="button" id="go">Start training</button>
+      <button class="btn ghost" type="button" id="reset">Start over</button>
+      <div class="corpus" role="radiogroup" aria-label="What it learns from">
+        <button type="button" role="radio" aria-checked="true" data-corpus="shakespeare">Shakespeare</button>
+        <button type="button" role="radio" aria-checked="false" data-corpus="code">Its own source code</button>
+        <button type="button" role="radio" aria-checked="false" data-corpus="own">Your text</button>
+      </div>
+    </div>
+    <div class="owntext" id="owntext" hidden>
+      <label for="ownbox">Paste at least 2,000 characters: emails, lyrics you wrote, a novel draft, code. It stays in this tab.</label>
+      <textarea id="ownbox" rows="5" spellcheck="false"></textarea>
+      <div class="own-row"><span class="fine" id="owncount">0 characters</span><button class="btn small" type="button" id="owngo" disabled>Train on this</button></div>
+    </div>
+  </div>
+
+  <div class="console" aria-labelledby="console-h">
+    <div class="con-h">
+      <h2 id="console-h">It’s writing</h2>
+      <span class="live" id="liveDot"><i></i><span id="liveTxt">waiting</span></span>
+    </div>
+    <pre class="writing" id="writing" aria-live="off"></pre>
+    <div class="vitals" role="group" aria-label="Training stats">
+      <div><b id="sStep">0</b><span>steps</span></div>
+      <div><b id="sLoss">—</b><span>loss</span></div>
+      <div><b id="sPerp">—</b><span>letters it’s torn between</span></div>
+      <div><b id="sTok">0</b><span>characters read</span></div>
+      <div><b id="sRate">—</b><span>characters / sec</span></div>
+      <div><b id="sCores">—</b><span>CPU cores training</span></div>
+    </div>
+  </div>
+</section>
+
+<p class="status" id="status" role="status" aria-live="polite"></p>
+
+<section class="grid2">
+  <article class="panel" aria-labelledby="loss-h">
+    <div class="p-h"><h2 id="loss-h">Learning curve</h2><p>Loss is how surprised it is by the real next character. Lower is better.</p></div>
+    <canvas id="lossChart" width="720" height="300" role="img" aria-label="Loss falling as training goes on"></canvas>
+    <p class="legend"><span class="k-train">training text</span><span class="k-val">text it has never seen</span><span class="k-rand">pure guessing</span></p>
+  </article>
+
+  <article class="panel" aria-labelledby="map-h">
+    <div class="p-h"><h2 id="map-h">How it sees letters</h2><p>Each character’s learned vector, flattened to 2D. Letters that behave alike drift together.</p></div>
+    <canvas id="map" width="720" height="300" role="img" aria-label="Map of character embeddings"></canvas>
+    <p class="legend"><span class="c-vow">vowels</span><span class="c-con">consonants</span><span class="c-up">capitals</span><span class="c-pun">punctuation</span><span class="c-sp">space & newline</span></p>
+  </article>
+</section>
+
+<section class="panel talk" aria-labelledby="talk-h">
+  <div class="p-h"><h2 id="talk-h">Talk to it</h2><p>Give it a start. It continues one character at a time, rolling weighted dice from its own odds.</p></div>
+  <form id="talkForm" class="talk-row" autocomplete="off">
+    <label class="sr" for="prompt">Prompt</label>
+    <input id="prompt" type="text" value="ROMEO:" spellcheck="false" maxlength="200">
+    <label class="temp" for="temp">Temperature <output id="tempOut">0.8</output><input id="temp" type="range" min="0.1" max="1.6" step="0.1" value="0.8"></label>
+    <button class="btn" type="submit">Continue it</button>
+  </form>
+  <pre class="gen" id="gen" aria-live="polite"></pre>
+
+  <div class="insides">
+    <div>
+      <h3>What it thinks comes next</h3>
+      <p class="fine">Its probability for each possible next character after your prompt, updated as it trains.</p>
+      <ol class="odds" id="odds"></ol>
+    </div>
+    <div>
+      <h3>Where it’s looking</h3>
+      <p class="fine">Attention: for the next character, how much each head weighs every earlier character. Brighter means more.</p>
+      <div class="heads" id="heads"></div>
+    </div>
+  </div>
+</section>
+
+<section class="panel" aria-labelledby="lapse-h">
+  <div class="p-h"><h2 id="lapse-h">Time-lapse</h2><p>Same prompt, same dice, at each milestone. This is the whole story of training.</p></div>
+  <ol class="lapse" id="lapse"></ol>
+</section>
+
+<section id="how" class="how" aria-labelledby="how-h">
+  <p class="eyebrow">Under the hood</p>
+  <h2 id="how-h">How it works</h2>
+  <p class="lede">About __LINES__ lines of JavaScript and CSS, no libraries, no server, covered by __TESTS__ automated tests. AI does most of the typing; the engineering is mine.</p>
+
+  <ol class="arch" aria-label="The network, input to output">
+    <li><b>Characters in</b><span>Each character becomes a token; up to <span class="cfgC">48</span> at a time.</span></li>
+    <li><b>Embeddings</b><span>A learned <span class="cfgD">48</span>-number vector per character, plus one per position.</span></li>
+    <li class="rep"><b>Transformer block × <span class="cfgL">2</span></b><span>Layer norm → <span class="cfgH">4</span>-head causal self-attention → residual → layer norm → MLP (<span class="cfgF">192</span> wide, GELU) → residual.</span></li>
+    <li><b>Final norm + output</b><span>Scores for every character, using the embedding table again (tied weights).</span></li>
+    <li><b>Softmax</b><span>Scores become odds for the next character.</span></li>
+  </ol>
+
+  <div class="decisions">
+    <div>
+      <h3>Backprop, by hand</h3>
+      <p>No autograd. The backward pass for layer norm, attention, GELU, the linear layers and the tied output head is derived on paper and written out. Every tensor’s gradient is checked against finite differences to better than one part in 100,000 before anything ships.</p>
+    </div>
+    <div>
+      <h3>Your cores as GPUs</h3>
+      <p>Training is synchronous data parallel, the way big models train across GPUs: each Web Worker gets the weights, samples its own batch, and sends back gradients. The page averages them, clips them, and takes an AdamW step with warm-up and cosine decay.</p>
+    </div>
+    <div>
+      <h3>Fast enough in plain JavaScript</h3>
+      <p>Weights are transposed so every matrix multiply is a dot product with its running sum in a register. GELU uses its one-exp sigmoid form. A separate worker writes the samples and draws what it’s looking at, so the page never stalls.</p>
+    </div>
+    <div>
+      <h3>Honest about size</h3>
+      <p>This is the architecture idea, not the scale. Real assistants have billions of parameters, read trillions of words and train for weeks on thousands of GPUs. This one reads a few hundred thousand characters for a few minutes. Shakespeare text is public domain; nothing you paste leaves the tab.</p>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="foot">
+  <p>Built by Grady Davis, Spartanburg, SC. <a href="https://stusyn.com/grady-davis">Résumé and other work ↗</a> · <a href="https://code-demo.grady.stusyn.com/project/">Sift</a> · <a href="https://code-demo.grady.stusyn.com/">GRADY.OS</a> · <a href="https://github.com/cgrdavis123-svg/Syndicate-LLM">Source</a></p>
+  <p class="fine">No cookies, no trackers, no network requests. Training pauses when this tab is hidden.</p>
+</footer>
+
+<script src="gpt.js?v=__V__"></script>
+<script src="corpus.js?v=__V__"></script>
+<script src="app.js?v=__V__"></script>
+</body>
+</html>
