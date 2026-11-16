@@ -1,0 +1,71 @@
+# Copy this file into any project repo as .github/workflows/deploy-lab.yml.
+# On every push it publishes the project to https://apps.stusyn.com/<repo-name>/ (and lists it on the lab's home page).
+#
+# Needs one repo secret: APPS_DEPLOY_KEY (the lab's upload key; see tools/apps-lab/README.md in the syndicate repo).
+# What gets uploaded: if package.json has a "build" script, it runs it and uploads dist/ or build/;
+# otherwise the repo itself (minus .git, .github, node_modules). The folder must have an index.html.
+# To pick a different build or folder, or the card's title and text, set the LAB_* lines below.
+# The upload replaces that project's folder exactly (--delete), and the key can't reach anything else on the server.
+name: Deploy to apps.stusyn.com
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-lab
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      APPS_DEPLOY_KEY: ${{ secrets.APPS_DEPLOY_KEY }}
+      REPO_NAME: ${{ github.event.repository.name }}
+      REPO_DESC: ${{ github.event.repository.description }}
+      REPO_URL: ${{ github.event.repository.html_url }}
+      LAB_BUILD: ""   # optional: the build command, if not "npm run build"
+      LAB_DIR: ""     # optional: the folder to upload, if not dist/ or build/
+      LAB_TITLE: "Little Language Model"   # optional: the card's title (default: the repo name)
+      LAB_DESC: "A GPT-style language model written from scratch in plain JavaScript. It trains live in your browser across your CPU cores, from gibberish to Shakespeare."    # optional: the card's text (default: the repo's GitHub description)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (if the project has a build script)
+        run: |
+          if [ -n "$LAB_BUILD" ] || { [ -f package.json ] && jq -e '.scripts.build' package.json >/dev/null; }; then
+            if [ -f package-lock.json ]; then npm ci; else npm install; fi
+            ${LAB_BUILD:-npm run build}
+          else
+            echo "No build script: uploading the files as they are."
+          fi
+
+      - name: Collect the site
+        run: |
+          SRC=${LAB_DIR:-.}
+          [ -n "$LAB_DIR" ] || for d in dist build; do
+            if [ -f "$d/index.html" ] && [ -f package.json ]; then SRC=$d; break; fi
+          done
+          mkdir -p /tmp/site
+          tar -C "$SRC" --exclude=.git --exclude=.github --exclude=node_modules --exclude='.env*' -cf - . | tar -C /tmp/site -xf -
+          test -f /tmp/site/index.html || { echo "error: no index.html in $SRC"; exit 1; }
+          # The lab's home page reads this card.
+          TITLE=${LAB_TITLE:-$(echo "$REPO_NAME" | tr '_-' '  ' | sed -E 's/(^| )([a-z])/\1\u\2/g')}
+          jq -n --arg title "$TITLE" --arg description "${LAB_DESC:-$REPO_DESC}" --arg repo "$REPO_URL" \
+            --arg updated "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '$ARGS.named' > /tmp/site/app.json
+          echo "SLUG=$(echo "$REPO_NAME" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9._\n-' '-' | sed 's/^[-.]*//' | cut -c1-64)" >> "$GITHUB_ENV"
+
+      - name: Upload
+        if: env.APPS_DEPLOY_KEY != ''
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          # The server's host key, so the upload refuses any other machine.
+          echo "104.207.66.107 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ1rhEu4euyPjZqCsza2Jlszc3alNupVmQeXs9WZlN3K" > ~/.ssh/known_hosts
+          printf '%s\n' "$APPS_DEPLOY_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          rsync -rlz --delete --chmod=D755,F644 /tmp/site/ "apps@104.207.66.107:$SLUG/"
+          echo "Live: https://apps.stusyn.com/$SLUG/"
+
+      - name: No key yet
+        if: env.APPS_DEPLOY_KEY == ''
+        run: echo "Built, but not uploaded. Add the APPS_DEPLOY_KEY secret to this repo to deploy."
